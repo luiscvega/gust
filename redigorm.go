@@ -109,9 +109,9 @@ func Fetch(c redis.Conn, dst interface{}, id string) error {
 func FetchMany(c redis.Conn, dst interface{}, ids []string) error {
 	slice := reflect.ValueOf(dst).Elem()
 	elementType := slice.Type().Elem()
-	values := []reflect.Value{}
+	values := make([]reflect.Value, len(ids))
 
-	for _, id := range ids {
+	for i, id := range ids {
 		pointer := reflect.New(elementType).Interface()
 
 		err := Fetch(c, pointer, id)
@@ -119,7 +119,7 @@ func FetchMany(c redis.Conn, dst interface{}, ids []string) error {
 			return err
 		}
 
-		values = append(values, reflect.Indirect(reflect.ValueOf(pointer)))
+		values[i] = reflect.Indirect(reflect.ValueOf(pointer))
 	}
 
 	slice.Set(reflect.Append(slice, values...))
