@@ -1,11 +1,11 @@
 package redigorm
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
-	"fmt"
 	"log"
 	"reflect"
-	"strconv"
 
 	"github.com/garyburd/redigo/redis"
 	"github.com/satori/go.uuid"
@@ -27,38 +27,6 @@ func Open() redis.Conn {
 	return c
 }
 
-func Attributes(pointer reflect.Value) (map[string]interface{}, error) {
-	attributesMap := map[string]interface{}{}
-
-	for i := 0; i < pointer.NumField(); i++ {
-		fieldValue := pointer.Field(i)
-		fieldName := pointer.Type().Field(i).Tag.Get("redis")
-
-		if fieldName == "" {
-			continue
-		}
-
-		if fieldValue.Type().Kind() == reflect.Struct {
-			fv, err := Attributes(reflect.Indirect(fieldValue))
-			if err != nil {
-				return nil, err
-			}
-
-			attributesBytes, err := json.Marshal(fv)
-			if err != nil {
-				return nil, err
-			}
-
-			attributesMap[fieldName] = string(attributesBytes)
-			continue
-		}
-
-		attributesMap[fieldName] = fieldValue.Interface()
-	}
-
-	return attributesMap, nil
-}
-
 // Save struct to hash in redis
 func Save(c redis.Conn, src interface{}) error {
 	pointer := reflect.ValueOf(src).Elem()
@@ -71,28 +39,20 @@ func Save(c redis.Conn, src interface{}) error {
 	}
 
 	// Step 2: Prepare attributes
-	attributesMap, err := Attributes(pointer)
+	var attributesBuffer bytes.Buffer
+	encoder := gob.NewEncoder(&attributesBuffer)
+	err := encoder.Encode(reflect.ValueOf(src).Interface())
 	if err != nil {
 		return err
-	}
-
-	attributes := []interface{}{}
-
-	for k, v := range attributesMap {
-		attributes = append(attributes, k, v)
 	}
 
 	// Step 3: Prepare indices and uniques
 	indices := map[string][]interface{}{}
 	uniques := map[string]interface{}{}
-	for i := 0; i < pointer.NumField(); i++ {
+	for i := 1; i < pointer.NumField(); i++ {
 		fieldValue := pointer.Field(i).Interface()
-		fieldName := pointer.Type().Field(i).Tag.Get("redis")
+		fieldName := pointer.Type().Field(i).Name
 		tagValue := pointer.Type().Field(i).Tag.Get("omg")
-
-		if fieldName == "" {
-			continue
-		}
 
 		if tagValue == "" {
 			continue
@@ -114,31 +74,25 @@ func Save(c redis.Conn, src interface{}) error {
 		}
 	}
 
-	// Step 4: Prepare attributes json
-	attributesBytes, err := json.Marshal(attributes)
-	if err != nil {
-		return err
-	}
-
-	// Step 5: Prepare indices json
+	// Step 4: Prepare indices json
 	indicesBytes, err := json.Marshal(indices)
 	if err != nil {
 		return err
 	}
 
-	// Step 6: Prepare uniques json
+	// Step 5: Prepare uniques json
 	uniquesBytes, err := json.Marshal(uniques)
 	if err != nil {
 		return err
 	}
 
-	// Step 7: Get model name
+	// Step 6: Get model name
 	modelName := pointer.Type().Name()
 
-	// Step 8: Save
+	// Step 7: Save
 	_, err = c.Do("EVALSHA", saveDigest, 0,
 		`{ "name": "`+modelName+`", "id": "`+modelId+`" }`,
-		string(attributesBytes),
+		attributesBuffer.String(),
 		string(indicesBytes),
 		string(uniquesBytes))
 
@@ -150,53 +104,15 @@ func Fetch(c redis.Conn, dst interface{}, id string) error {
 	modelName := reflect.ValueOf(dst).Elem().Type().Name()
 	key := modelName + ":" + id
 
-	values, err := redis.Values(c.Do("HGETALL", key))
+	attributesBytes, err := redis.Bytes(c.Do("GET", key))
 	if err != nil {
 		return err
 	}
 
-	attributesMap := map[string]interface{}{}
-	for i := 0; i < len(values); i += 2 {
-		attributesMap[string(values[i].([]byte))] = values[i+1]
-	}
+	attributesBufferPointer := bytes.NewReader(attributesBytes)
+	decoder := gob.NewDecoder(attributesBufferPointer)
 
-	pointer := reflect.ValueOf(dst).Elem()
-	for i := 1; i < pointer.NumField(); i++ {
-		field := pointer.Field(i)
-		structField := pointer.Type().Field(i)
-		fieldName := structField.Tag.Get("redis")
-
-		if fieldName == "" {
-			continue
-		}
-
-		value := attributesMap[fieldName]
-		switch structField.Type.Kind() {
-		case reflect.String:
-			field.SetString(string(value.([]byte)))
-		case reflect.Int:
-			intString := string(value.([]byte))
-
-			integer, err := strconv.Atoi(intString)
-			if err != nil {
-				return err
-			}
-
-			field.Set(reflect.ValueOf(integer))
-		case reflect.Struct:
-			x := reflect.New(field.Type())
-
-			fmt.Println(string(value.([]byte)))
-			err := json.Unmarshal(value.([]byte), x.Interface())
-			if err != nil {
-				return err
-			}
-
-			fmt.Println("=>", x)
-		}
-	}
-
-	return nil
+	return decoder.Decode(dst)
 }
 
 // FetchMany accepts a slice of id strings

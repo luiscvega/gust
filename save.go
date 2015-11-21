@@ -33,22 +33,16 @@ var saveScript = `-- This script receives four parameters, all encoded with
 -- message and the field that triggered the error.
 --
 local model   = cjson.decode(ARGV[1])
-local attrs   = cjson.decode(ARGV[2])
+local attrs   = ARGV[2]
 local indices = cjson.decode(ARGV[3])
 local uniques = cjson.decode(ARGV[4])
 
 local function save(model, attrs)
-	if math.mod(#attrs, 2) == 1 then
-		error("Wrong number of attribute/value pairs")
-	end
+	model.key = model.name .. ":" .. model.id
 
-	if #attrs > 0 then
-		model.key = model.name .. ":" .. model.id
-
-		redis.call("SADD", model.name .. ":all", model.id)
-		redis.call("DEL", model.key)
-		redis.call("HMSET", model.key, unpack(attrs))
-	end
+	redis.call("SADD", model.name .. ":all", model.id)
+	redis.call("DEL", model.key)
+	redis.call("SET", model.key, attrs)
 end
 
 local function index(model, indices)

@@ -6,17 +6,17 @@ import (
 )
 
 type Address struct {
-	Line1 string `redis:"Line1"`
+	Line1 string
 }
 
 type User struct {
-	Id      string  `redis:"id"`
-	Age     int     `redis:"age"`
-	Name    string  `redis:"name"`
-	Email   string  `redis:"email" omg:"unique"`
-	Sex     string  `redis:"sex" omg:"index"`
-	College string  `redis:"college" omg:"index"`
-	Address Address `redis:"address"`
+	Id      string
+	Age     int
+	Name    string
+	Email   string `omg:"unique"`
+	Sex     string `omg:"index"`
+	College string `omg:"index"`
+	Address Address
 }
 
 func TestA(t *testing.T) {
@@ -25,22 +25,28 @@ func TestA(t *testing.T) {
 
 	c.Do("FLUSHALL")
 
-	Save(c, &User{"", 28, "Luis", "luis@vega.com", "male", "Ateneo", Address{"79"}})
-	Save(c, &User{"", 33, "Miguel", "miguel@vega.com", "male", "UP", Address{"79"}})
-	Save(c, &User{"", 31, "Paola", "paola@vega.com", "female", "Ateneo", Address{"79"}})
+	Save(c, &User{"", 28, "Luis", "luis@vega.com", "male", "Ateneo", Address{Line1: "79"}})
+	Save(c, &User{"", 33, "Miguel", "miguel@vega.com", "male", "UP", Address{Line1: "79"}})
+	Save(c, &User{"", 31, "Paola", "paola@vega.com", "female", "Ateneo", Address{Line1: "79"}})
 
 	user := User{}
-	err := With(c, &user, "email", "luis@vega.com")
-	fmt.Println(err)
+	err := With(c, &user, "Email", "luis@vega.com")
+	if err != nil {
+		t.Error(err)
+	}
 	fmt.Println("USER:", user)
 
 	users := []User{}
-	err = Find(c, &users, "college:Ateneo", "sex:male")
-	fmt.Println(err)
+	err = Find(c, &users, "Sex:male")
+	if err != nil {
+		t.Error(err)
+	}
 	fmt.Println("USERS:", users)
 
 	users = []User{}
 	err = FetchAll(c, &users)
-	fmt.Println(err)
+	if err != nil {
+		t.Error(err)
+	}
 	fmt.Println("USERS:", users)
 }
