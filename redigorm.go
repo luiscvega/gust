@@ -99,10 +99,23 @@ func Fetch(c redis.Conn, dst interface{}, id string) error {
 		return err
 	}
 
-	attributesBufferPointer := bytes.NewReader(attributesBytes)
-	decoder := gob.NewDecoder(attributesBufferPointer)
+	readerPointer := bytes.NewReader(attributesBytes)
+	decoder := gob.NewDecoder(readerPointer)
 
 	return decoder.Decode(dst)
+}
+
+// With returns a record given a unique value
+func With(c redis.Conn, dst interface{}, unique string, value string) error {
+	modelName := reflect.ValueOf(dst).Elem().Type().Name()
+	key := modelName + ":uniques:" + unique
+
+	id, err := redis.String(c.Do("HGET", key, value))
+	if err != nil {
+		return err
+	}
+
+	return Fetch(c, dst, id)
 }
 
 // FetchMany accepts a slice of id strings
@@ -154,17 +167,4 @@ func Find(c redis.Conn, dst interface{}, queries ...string) error {
 	}
 
 	return FetchMany(c, dst, ids)
-}
-
-// With returns a record given a unique value
-func With(c redis.Conn, dst interface{}, unique string, value string) error {
-	modelName := reflect.ValueOf(dst).Elem().Type().Name()
-	key := modelName + ":uniques:" + unique
-
-	id, err := redis.String(c.Do("HGET", key, value))
-	if err != nil {
-		return err
-	}
-
-	return Fetch(c, dst, id)
 }

@@ -1,9 +1,6 @@
 package redigorm
 
-import (
-	"fmt"
-	"testing"
-)
+import "testing"
 
 type Address struct {
 	Line1 string
@@ -34,19 +31,16 @@ func TestA(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	fmt.Println("USER:", user)
 
 	users := []User{}
 	err = Find(c, &users, "Sex:male")
 	if err != nil {
 		t.Error(err)
 	}
-	fmt.Println("USERS:", users)
 
 	users = []User{}
 	err = FetchAll(c, &users)
 	if err != nil {
 		t.Error(err)
 	}
-	fmt.Println("USERS:", users)
 }
