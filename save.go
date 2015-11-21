@@ -1,38 +1,6 @@
 package redigorm
 
-var saveScript = `-- This script receives four parameters, all encoded with
--- JSON. The decoded values are used for saving a model
--- instance in Redis, creating or updating a hash as needed and
--- updating zero or more sets (indices) and zero or more hashes
--- (unique indices).
---
--- # model
---
--- Table with one or two attributes:
---    name (model name)
---    id (model instance id, optional)
---
--- If the id is not provided, it is treated as a new record.
---
--- # attrs
---
--- Array with attribute/value pairs.
---
--- # indices
---
--- Fields and values to be indexed. Each key in the indices
--- table is mapped to an array of values. One index is created
--- for each field/value pair.
---
--- # uniques
---
--- Fields and values to be indexed as unique. Unlike indices,
--- values are not enumerable. If a field/value pair is not unique
--- (i.e., if there was already a hash entry for that field and
--- value), an error is returned with the UniqueIndexViolation
--- message and the field that triggered the error.
---
-local model   = cjson.decode(ARGV[1])
+var saveScript = `local model   = cjson.decode(ARGV[1])
 local attrs   = ARGV[2]
 local indices = cjson.decode(ARGV[3])
 local uniques = cjson.decode(ARGV[4])
@@ -46,13 +14,11 @@ local function save(model, attrs)
 end
 
 local function index(model, indices)
-	for field, enum in pairs(indices) do
-		for _, val in ipairs(enum) do
-			local key = model.name .. ":indices:" .. field .. ":" .. tostring(val)
+	for field, value in pairs(indices) do
+		local key = model.name .. ":indices:" .. field .. ":" .. tostring(value)
 
-			redis.call("SADD", model.key .. ":_indices", key)
-			redis.call("SADD", key, model.id)
-		end
+		redis.call("SADD", model.key .. ":_indices", key)
+		redis.call("SADD", key, model.id)
 	end
 end
 

@@ -47,29 +47,19 @@ func Save(c redis.Conn, src interface{}) error {
 	}
 
 	// Step 3: Prepare indices and uniques
-	indices := map[string][]interface{}{}
+	indices := map[string]interface{}{}
 	uniques := map[string]interface{}{}
 	for i := 1; i < pointer.NumField(); i++ {
 		fieldValue := pointer.Field(i).Interface()
 		fieldName := pointer.Type().Field(i).Name
 		tagValue := pointer.Type().Field(i).Tag.Get("omg")
 
-		if tagValue == "" {
+		switch tagValue {
+		case "":
 			continue
-		}
-
-		if tagValue == "index" {
-			s, ok := indices[fieldName]
-			if ok {
-				s = append(s, fieldValue)
-				continue
-			}
-
-			indices[fieldName] = []interface{}{fieldValue}
-			continue
-		}
-
-		if tagValue == "unique" {
+		case "index":
+			indices[fieldName] = fieldValue
+		case "unique":
 			uniques[fieldName] = fieldValue
 		}
 	}
@@ -141,7 +131,7 @@ func FetchMany(c redis.Conn, dst interface{}, ids []string) error {
 func FetchAll(c redis.Conn, dst interface{}) error {
 	modelName := reflect.TypeOf(dst).Elem().Elem().Name()
 
-	ids, err := All(c, modelName)
+	ids, err := redis.Strings(c.Do("SMEMBERS", modelName+":all"))
 	if err != nil {
 		return err
 	}
@@ -164,11 +154,6 @@ func Find(c redis.Conn, dst interface{}, queries ...string) error {
 	}
 
 	return FetchMany(c, dst, ids)
-}
-
-// All returns all ids of a model
-func All(c redis.Conn, modelName string) ([]string, error) {
-	return redis.Strings(c.Do("SMEMBERS", modelName+":all"))
 }
 
 // With returns a record given a unique value
