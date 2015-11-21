@@ -1,4 +1,4 @@
-package redigorm
+package gust
 
 import (
 	"bytes"
@@ -11,20 +11,32 @@ import (
 	"github.com/satori/go.uuid"
 )
 
-var saveDigest string
+var (
+	saveDigest   string
+	deleteDigest string
+)
 
-func Open() redis.Conn {
-	c, err := redis.Dial("tcp", ":6379")
-	if err != nil {
-		log.Fatal(err)
+func NewPool() *redis.Pool {
+	return &redis.Pool{
+		Dial: func() (redis.Conn, error) {
+			c, err := redis.Dial("tcp", ":6379")
+			if err != nil {
+				return nil, err
+			}
+
+			if saveDigest == "" {
+				saveDigest, err = redis.String(c.Do("SCRIPT", "LOAD", saveScript))
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+
+			if deleteDigest == "" {
+			}
+
+			return c, err
+		},
 	}
-
-	saveDigest, err = redis.String(c.Do("SCRIPT", "LOAD", saveScript))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return c
 }
 
 // Save struct to hash in redis
@@ -52,7 +64,7 @@ func Save(c redis.Conn, src interface{}) error {
 	for i := 1; i < pointer.NumField(); i++ {
 		fieldValue := pointer.Field(i).Interface()
 		fieldName := pointer.Type().Field(i).Name
-		tagValue := pointer.Type().Field(i).Tag.Get("omg")
+		tagValue := pointer.Type().Field(i).Tag.Get("gust")
 
 		switch tagValue {
 		case "":
@@ -167,4 +179,8 @@ func Find(c redis.Conn, dst interface{}, queries ...string) error {
 	}
 
 	return FetchMany(c, dst, ids)
+}
+
+func Delete(c redis.Conn, id, modelName string) (bool, error) {
+	return true, nil
 }

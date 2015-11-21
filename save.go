@@ -1,4 +1,4 @@
-package redigorm
+package gust
 
 var saveScript = `local model   = cjson.decode(ARGV[1])
 local attrs   = ARGV[2]

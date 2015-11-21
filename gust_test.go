@@ -1,4 +1,4 @@
-package redigorm
+package gust
 
 import "testing"
 
