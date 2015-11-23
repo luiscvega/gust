@@ -32,6 +32,10 @@ func NewPool() *redis.Pool {
 			}
 
 			if deleteDigest == "" {
+				deleteDigest, err = redis.String(c.Do("SCRIPT", "LOAD", deleteScript))
+				if err != nil {
+					log.Fatal(err)
+				}
 			}
 
 			return c, err
@@ -181,6 +185,7 @@ func Find(c redis.Conn, dst interface{}, queries ...string) error {
 	return FetchMany(c, dst, ids)
 }
 
-func Delete(c redis.Conn, id, modelName string) (bool, error) {
-	return true, nil
+func Delete(c redis.Conn, modelName, modelId string) (bool, error) {
+	return redis.Bool(c.Do("EVALSHA", deleteDigest, 0,
+		`{ "name": "`+modelName+`", "id": "`+modelId+`" }`))
 }

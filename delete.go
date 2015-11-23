@@ -22,8 +22,7 @@ var deleteScript = `-- This script receives three parameters, all encoded with
 -- should be removed as this object is deleted.
 --
 local model   = cjson.decode(ARGV[1])
-local uniques = cjson.decode(ARGV[2])
-local tracked = cjson.decode(ARGV[3])
+model.key = model.name .. ":" .. model.id
 
 local function remove_indices(model)
 	local memo = model.key .. ":_indices"
@@ -31,26 +30,15 @@ local function remove_indices(model)
 
 	for _, key in ipairs(existing) do
 		redis.call("SREM", key, model.id)
-		redis.call("SREM", memo, key)
 	end
 end
 
-local function remove_uniques(model, uniques)
+local function remove_uniques(model)
 	local memo = model.key .. ":_uniques"
+	local existing = redis.call("HGETALL", memo)
 
-	for field, _ in pairs(uniques) do
-		local key = model.name .. ":uniques:" .. field
-
-		redis.call("HDEL", key, redis.call("HGET", memo, key))
-		redis.call("HDEL", memo, key)
-	end
-end
-
-local function remove_tracked(model, tracked)
-	for _, tracked_key in ipairs(tracked) do
-		local key = model.key .. ":" .. tracked_key
-
-		redis.call("DEL", key)
+	for i = 1, #existing, 2 do
+		redis.call("HDEL", existing[i], existing[i+1])
 	end
 end
 
@@ -62,12 +50,10 @@ local function delete(model)
 	}
 
 	redis.call("SREM", model.name .. ":all", model.id)
-	redis.call("DEL", unpack(keys))
+	return redis.call("DEL", unpack(keys))
 end
 
 remove_indices(model)
-remove_uniques(model, uniques)
-remove_tracked(model, tracked)
-delete(model)
-
-return model.id`
+remove_uniques(model)
+local count = delete(model)
+return count>=1`
