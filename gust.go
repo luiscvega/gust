@@ -63,12 +63,16 @@ func Save(c redis.Conn, src interface{}) error {
 	}
 
 	// Step 3: Prepare indices and uniques
-	indices := map[string]interface{}{}
-	uniques := map[string]interface{}{}
+	indices := map[string]string{}
+	uniques := map[string]string{}
 	for i := 1; i < pointer.NumField(); i++ {
-		fieldValue := pointer.Field(i).Interface()
+		fieldValue := pointer.Field(i).String()
 		fieldName := pointer.Type().Field(i).Name
 		tagValue := pointer.Type().Field(i).Tag.Get("gust")
+
+		if fieldValue == "" {
+			continue
+		}
 
 		switch tagValue {
 		case "":
@@ -105,7 +109,7 @@ func Save(c redis.Conn, src interface{}) error {
 	return err
 }
 
-// FetchOne accepts an id string
+// Fetch accepts an id string
 func Fetch(c redis.Conn, dst interface{}, id string) error {
 	modelName := reflect.ValueOf(dst).Elem().Type().Name()
 	key := modelName + ":" + id

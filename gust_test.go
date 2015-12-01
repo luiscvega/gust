@@ -25,18 +25,9 @@ func TestA(t *testing.T) {
 
 	c.Do("FLUSHALL")
 
-	user := User{"", 28, "Luis", "luis@vega.com", "male", "Ateneo", Address{Line1: "79"}}
+	user := User{"", 28, "Luis", "luis@vega.com", "", "Ateneo", Address{Line1: "79"}}
 	err := Save(c, &user)
 	if err != nil {
 		t.Error(err)
-	}
-
-	ok, err := Delete(c, "User", user.Id)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if !ok {
-		t.Error("`ok` should be true.")
 	}
 }
