@@ -16,10 +16,10 @@ var (
 	deleteDigest string
 )
 
-func NewPool() *redis.Pool {
+func NewPool(server string) *redis.Pool {
 	return &redis.Pool{
 		Dial: func() (redis.Conn, error) {
-			c, err := redis.Dial("tcp", ":6379")
+			c, err := redis.Dial("tcp", server)
 			if err != nil {
 				return nil, err
 			}
