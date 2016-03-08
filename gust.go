@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
-	"log"
 	"reflect"
 
 	"github.com/garyburd/redigo/redis"
@@ -15,33 +14,6 @@ var (
 	saveDigest   string
 	deleteDigest string
 )
-
-func NewPool(server string) *redis.Pool {
-	return &redis.Pool{
-		Dial: func() (redis.Conn, error) {
-			c, err := redis.Dial("tcp", server)
-			if err != nil {
-				return nil, err
-			}
-
-			if saveDigest == "" {
-				saveDigest, err = redis.String(c.Do("SCRIPT", "LOAD", saveScript))
-				if err != nil {
-					log.Fatal(err)
-				}
-			}
-
-			if deleteDigest == "" {
-				deleteDigest, err = redis.String(c.Do("SCRIPT", "LOAD", deleteScript))
-				if err != nil {
-					log.Fatal(err)
-				}
-			}
-
-			return c, err
-		},
-	}
-}
 
 // Save struct to hash in redis
 func Save(c redis.Conn, src interface{}) error {
