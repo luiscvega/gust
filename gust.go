@@ -13,10 +13,33 @@ import (
 var (
 	saveDigest   string
 	deleteDigest string
+	digestCash   map[string]map[string]string
 )
 
+type Conn struct {
+	URL string
+	redis.Conn
+}
+
+// func script(c Conn, digest string) error {
+// 	c := pool.Get()
+// 	defer c.Close()
+//
+// 	var err error
+//
+// 	saveDigest, err = redis.String(c.Do("SCRIPT", "LOAD", saveScript))
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	deleteDigest, err = redis.String(c.Do("SCRIPT", "LOAD", deleteScript))
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// }
+
 // Save struct to hash in redis
-func Save(c redis.Conn, src interface{}) error {
+func (c Conn) Save(src interface{}) error {
 	pointer := reflect.ValueOf(src).Elem()
 
 	// Step 1: Get/set id
@@ -82,7 +105,7 @@ func Save(c redis.Conn, src interface{}) error {
 }
 
 // Fetch accepts an id string
-func Fetch(c redis.Conn, dst interface{}, id string) error {
+func (c Conn) Fetch(dst interface{}, id string) error {
 	modelName := reflect.ValueOf(dst).Elem().Type().Name()
 	key := modelName + ":" + id
 
@@ -98,7 +121,7 @@ func Fetch(c redis.Conn, dst interface{}, id string) error {
 }
 
 // With returns a record given a unique value
-func With(c redis.Conn, dst interface{}, unique string, value string) error {
+func (c Conn) With(dst interface{}, unique string, value string) error {
 	modelName := reflect.ValueOf(dst).Elem().Type().Name()
 	key := modelName + ":uniques:" + unique
 
@@ -107,11 +130,11 @@ func With(c redis.Conn, dst interface{}, unique string, value string) error {
 		return err
 	}
 
-	return Fetch(c, dst, id)
+	return c.Fetch(dst, id)
 }
 
 // FetchMany accepts a slice of id strings
-func FetchMany(c redis.Conn, dst interface{}, ids []string) error {
+func (c Conn) FetchMany(dst interface{}, ids []string) error {
 	slice := reflect.ValueOf(dst).Elem()
 	elementType := slice.Type().Elem()
 	values := make([]reflect.Value, len(ids))
@@ -119,7 +142,7 @@ func FetchMany(c redis.Conn, dst interface{}, ids []string) error {
 	for i, id := range ids {
 		pointer := reflect.New(elementType).Interface()
 
-		err := Fetch(c, pointer, id)
+		err := c.Fetch(pointer, id)
 		if err != nil {
 			return err
 		}
@@ -133,7 +156,7 @@ func FetchMany(c redis.Conn, dst interface{}, ids []string) error {
 }
 
 // FetchAll gets all records of the model
-func FetchAll(c redis.Conn, dst interface{}) error {
+func (c Conn) FetchAll(dst interface{}) error {
 	modelName := reflect.TypeOf(dst).Elem().Elem().Name()
 
 	ids, err := redis.Strings(c.Do("SMEMBERS", modelName+":all"))
@@ -141,11 +164,11 @@ func FetchAll(c redis.Conn, dst interface{}) error {
 		return err
 	}
 
-	return FetchMany(c, dst, ids)
+	return c.FetchMany(dst, ids)
 }
 
 // Find fetches records that match the given index
-func Find(c redis.Conn, dst interface{}, queries ...string) error {
+func (c Conn) Find(dst interface{}, queries ...string) error {
 	modelName := reflect.TypeOf(dst).Elem().Elem().Name()
 
 	args := []interface{}{}
@@ -158,10 +181,10 @@ func Find(c redis.Conn, dst interface{}, queries ...string) error {
 		return err
 	}
 
-	return FetchMany(c, dst, ids)
+	return c.FetchMany(dst, ids)
 }
 
-func Delete(c redis.Conn, modelName, modelId string) (bool, error) {
+func (c Conn) Delete(modelName, modelId string) (bool, error) {
 	return redis.Bool(c.Do("EVALSHA", deleteDigest, 0,
 		`{ "name": "`+modelName+`", "id": "`+modelId+`" }`))
 }
