@@ -17,38 +17,37 @@ type User struct {
 }
 
 func TestA(t *testing.T) {
-	pool, err := NewPool("localhost:6379")
+	c, err := NewConn("redis://localhost:6379")
 	if err != nil {
 		t.Error(err)
 	}
-	defer pool.Close()
+	defer c.Close()
 
-	// Save user
+	// Create user
 	user := User{"", 28, "Luis", "luis@vega.com", "", "Ateneo de Manila", Address{Line1: "79"}}
-	err = pool.Save(&user)
+	err = c.Save(&user)
 	if err != nil {
 		t.Error(err)
 	}
+
 	id := user.Id
 
-	// Set to nil values
-	user = User{}
-
 	// Fetch user
-	err = pool.Fetch(&user, id)
+	user = User{}
+	err = c.Fetch(&user, id)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// Find users
 	users := []User{}
-	err = pool.Find(&users, "College:Ateneo de Manila")
+	err = c.FetchAll(&users)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// Delete user
-	ok, err := pool.Delete("User", id)
+	ok, err := c.Delete("User", id)
 	if err != nil {
 		t.Error(err)
 	}

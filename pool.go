@@ -3,21 +3,19 @@ package gust
 import "github.com/garyburd/redigo/redis"
 
 type Pool struct {
-	*redis.Pool
+	redis.Pool
 }
 
 func (pool Pool) Get() Conn {
 	c := pool.Pool.Get()
 
-	return Conn{Conn: c}
+	return Conn{c}
 }
 
-func NewPool(server string) (*Pool, error) {
-	pool := &Pool{}
-
-	pool.Pool = &redis.Pool{
+func NewPool(url string) *Pool {
+	p := redis.Pool{
 		Dial: func() (redis.Conn, error) {
-			c, err := redis.Dial("tcp", server)
+			c, err := redis.DialURL(url)
 			if err != nil {
 				return nil, err
 			}
@@ -26,22 +24,7 @@ func NewPool(server string) (*Pool, error) {
 		},
 	}
 
-	c := pool.Get()
-	defer c.Close()
-
-	var err error
-
-	saveDigest, err = redis.String(c.Do("SCRIPT", "LOAD", saveScript))
-	if err != nil {
-		return nil, err
-	}
-
-	deleteDigest, err = redis.String(c.Do("SCRIPT", "LOAD", deleteScript))
-	if err != nil {
-		return nil, err
-	}
-
-	return pool, nil
+	return &Pool{p}
 }
 
 func (pool Pool) Save(src interface{}) error {

@@ -4,55 +4,44 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
+	"fmt"
 	"reflect"
 
 	"github.com/garyburd/redigo/redis"
 	"github.com/satori/go.uuid"
 )
 
-var (
-	saveDigest   string
-	deleteDigest string
-	digestCash   map[string]map[string]string
-)
-
 type Conn struct {
-	URL string
 	redis.Conn
 }
 
-// func script(c Conn, digest string) error {
-// 	c := pool.Get()
-// 	defer c.Close()
-//
-// 	var err error
-//
-// 	saveDigest, err = redis.String(c.Do("SCRIPT", "LOAD", saveScript))
-// 	if err != nil {
-// 		return nil, err
-// 	}
-//
-// 	deleteDigest, err = redis.String(c.Do("SCRIPT", "LOAD", deleteScript))
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// }
+func NewConn(url string) (Conn, error) {
+	conn := Conn{}
 
-// Save struct to hash in redis
-func (c Conn) Save(src interface{}) error {
-	pointer := reflect.ValueOf(src).Elem()
-
-	// Step 1: Get/set id
-	modelId := pointer.Field(0).String()
-	if modelId == "" {
-		modelId = uuid.NewV4().String()
-		pointer.Field(0).SetString(modelId)
+	c, err := redis.DialURL(url)
+	if err != nil {
+		return conn, err
 	}
 
-	// Step 2: Prepare attributes
+	conn.Conn = c
+
+	return conn, nil
+}
+
+// Save struct to hash in redis
+func (c Conn) Save(model interface{}) error {
+	elem := reflect.ValueOf(model).Elem()
+	id := elem.Field(0).String()
+
+	if id == "" {
+		id = uuid.NewV4().String()
+		elem.Field(0).SetString(id)
+	}
+
+	// Step 1: Prepare attributes
 	var attributesBuffer bytes.Buffer
 	encoder := gob.NewEncoder(&attributesBuffer)
-	err := encoder.Encode(reflect.ValueOf(src).Interface())
+	err := encoder.Encode(reflect.ValueOf(model).Interface())
 	if err != nil {
 		return err
 	}
@@ -60,10 +49,10 @@ func (c Conn) Save(src interface{}) error {
 	// Step 3: Prepare indices and uniques
 	indices := map[string]string{}
 	uniques := map[string]string{}
-	for i := 1; i < pointer.NumField(); i++ {
-		fieldValue := pointer.Field(i).String()
-		fieldName := pointer.Type().Field(i).Name
-		tagValue := pointer.Type().Field(i).Tag.Get("gust")
+	for i := 1; i < elem.NumField(); i++ {
+		fieldValue := fmt.Sprint(elem.Field(i).Interface())
+		fieldName := elem.Type().Field(i).Name
+		tagValue := elem.Type().Field(i).Tag.Get("gust")
 
 		if fieldValue == "" {
 			continue
@@ -92,11 +81,11 @@ func (c Conn) Save(src interface{}) error {
 	}
 
 	// Step 6: Get model name
-	modelName := pointer.Type().Name()
+	modelName := elem.Type().Name()
 
 	// Step 7: Save
-	_, err = c.Do("EVALSHA", saveDigest, 0,
-		`{ "name": "`+modelName+`", "id": "`+modelId+`" }`,
+	_, err = c.Do("EVAL", saveScript, 0,
+		`{ "name": "`+modelName+`", "id": "`+id+`" }`,
 		attributesBuffer.String(),
 		string(indicesBytes),
 		string(uniquesBytes))
@@ -105,8 +94,8 @@ func (c Conn) Save(src interface{}) error {
 }
 
 // Fetch accepts an id string
-func (c Conn) Fetch(dst interface{}, id string) error {
-	modelName := reflect.ValueOf(dst).Elem().Type().Name()
+func (c Conn) Fetch(model interface{}, id string) error {
+	modelName := reflect.ValueOf(model).Elem().Type().Name()
 	key := modelName + ":" + id
 
 	attributesBytes, err := redis.Bytes(c.Do("GET", key))
@@ -117,25 +106,12 @@ func (c Conn) Fetch(dst interface{}, id string) error {
 	readerPointer := bytes.NewReader(attributesBytes)
 	decoder := gob.NewDecoder(readerPointer)
 
-	return decoder.Decode(dst)
-}
-
-// With returns a record given a unique value
-func (c Conn) With(dst interface{}, unique string, value string) error {
-	modelName := reflect.ValueOf(dst).Elem().Type().Name()
-	key := modelName + ":uniques:" + unique
-
-	id, err := redis.String(c.Do("HGET", key, value))
-	if err != nil {
-		return err
-	}
-
-	return c.Fetch(dst, id)
+	return decoder.Decode(model)
 }
 
 // FetchMany accepts a slice of id strings
-func (c Conn) FetchMany(dst interface{}, ids []string) error {
-	slice := reflect.ValueOf(dst).Elem()
+func (c Conn) FetchMany(model interface{}, ids []string) error {
+	slice := reflect.ValueOf(model).Elem()
 	elementType := slice.Type().Elem()
 	values := make([]reflect.Value, len(ids))
 
@@ -156,20 +132,33 @@ func (c Conn) FetchMany(dst interface{}, ids []string) error {
 }
 
 // FetchAll gets all records of the model
-func (c Conn) FetchAll(dst interface{}) error {
-	modelName := reflect.TypeOf(dst).Elem().Elem().Name()
+func (c Conn) FetchAll(model interface{}) error {
+	modelName := reflect.TypeOf(model).Elem().Elem().Name()
 
 	ids, err := redis.Strings(c.Do("SMEMBERS", modelName+":all"))
 	if err != nil {
 		return err
 	}
 
-	return c.FetchMany(dst, ids)
+	return c.FetchMany(model, ids)
+}
+
+// With returns a record given a unique value
+func (c Conn) With(model interface{}, unique string, value string) error {
+	modelName := reflect.ValueOf(model).Elem().Type().Name()
+	key := modelName + ":uniques:" + unique
+
+	id, err := redis.String(c.Do("HGET", key, value))
+	if err != nil {
+		return err
+	}
+
+	return c.Fetch(model, id)
 }
 
 // Find fetches records that match the given index
-func (c Conn) Find(dst interface{}, queries ...string) error {
-	modelName := reflect.TypeOf(dst).Elem().Elem().Name()
+func (c Conn) Find(model interface{}, queries ...string) error {
+	modelName := reflect.TypeOf(model).Elem().Elem().Name()
 
 	args := []interface{}{}
 	for _, query := range queries {
@@ -181,10 +170,10 @@ func (c Conn) Find(dst interface{}, queries ...string) error {
 		return err
 	}
 
-	return c.FetchMany(dst, ids)
+	return c.FetchMany(model, ids)
 }
 
 func (c Conn) Delete(modelName, modelId string) (bool, error) {
-	return redis.Bool(c.Do("EVALSHA", deleteDigest, 0,
+	return redis.Bool(c.Do("EVAL", deleteScript, 0,
 		`{ "name": "`+modelName+`", "id": "`+modelId+`" }`))
 }
